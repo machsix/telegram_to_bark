@@ -1,0 +1,4 @@
+telethon==1.43.2
+httpx==0.28.1
+pydantic==2.13.3
+json5==0.14.0

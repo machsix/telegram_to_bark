@@ -1,0 +1,22 @@
+# Secrets and local config — mounted at runtime via volume
+config.json
+config/
+
+# Runtime artifacts
+image_cache.db
+*.db
+
+# Python environment
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Dev/repo files
+.git/
+.github/
+*.md
+systemd/
+setup.sh
+test_suite.py

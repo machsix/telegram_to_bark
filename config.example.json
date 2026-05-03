@@ -1,0 +1,30 @@
+// vim: set filetype=jsonc:
+{
+  "telegram": {
+    "api_id": "YOUR_API_ID",
+    "api_hash": "YOUR_API_HASH",
+    "phone_number": "+1234567890",
+    "session_string": ""
+  },
+  "bark": {
+    "endpoints": [
+      "https://api.day.app/YOUR_BARK_KEY"
+    ],
+    "group": null,
+    "sound": null
+  },
+  "activity": {
+    "timeout_seconds": 300,
+    "session_hash": null
+  },
+  "logging": {
+    "level": "INFO",
+    "file": null
+  },
+  "image_cache": {
+    "backend": "tmpfiles", // "tmpfiles" or "imgbb"
+    "imgbb_api_key": null, // Required if backend is "imgbb"
+    "expiration_days": 7,
+    "db_path": "image_cache.db"
+  }
+}

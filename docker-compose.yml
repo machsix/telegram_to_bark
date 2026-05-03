@@ -1,0 +1,8 @@
+services:
+  telegram-bark:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - ./config:/app/config
+    environment:
+      - TZ=UTC
