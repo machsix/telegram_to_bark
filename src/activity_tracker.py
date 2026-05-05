@@ -18,7 +18,7 @@ class ActivityTracker:
         now = datetime.now(timezone.utc)
         if self.last_activity_time is None:
             return False
-        
+
 
         elapsed = (now - self.last_activity_time).total_seconds()
         is_active = elapsed < self.timeout_seconds

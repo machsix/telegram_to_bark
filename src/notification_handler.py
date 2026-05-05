@@ -3,9 +3,11 @@ import httpx
 import logging
 from pathlib import Path
 from typing import Optional
+from telethon.tl import functions
 from telethon.tl.types import User, Chat, Channel
 from telethon.client import TelegramClient
 from image_cache import ImageCache
+from message_filter import get_sender_name
 
 
 logger = logging.getLogger(__name__)
@@ -40,6 +42,7 @@ class NotificationHandler:
         message_text: str,
         chat_id: int,
         message_id: int,
+        topic_id: int | None = None,
     ) -> bool:
         try:
             # Get the chat entity to determine if it's a group message
@@ -52,9 +55,13 @@ class NotificationHandler:
                 # User message in a group/channel
                 sender_name = self._get_sender_name(sender)
                 group_name = self._get_sender_name(chat)
-                title = f"{sender_name} in {group_name}"
+                if topic_id is not None and isinstance(chat, Channel):
+                    topic_title = await self._get_topic_title(telegram_client, chat, topic_id)
+                    title = f"{sender_name} in {group_name} > {topic_title}" if topic_title else f"{sender_name} in {group_name}"
+                else:
+                    title = f"{sender_name} in {group_name}"
                 icon = await self._get_sender_avatar(telegram_client, chat)
-                deep_link = self._get_deep_link(chat, chat_id, message_id)
+                deep_link = self._get_deep_link(chat, chat_id, message_id, topic_id=topic_id)
             else:
                 # Direct message from user or other
                 title = self._get_sender_name(sender)
@@ -196,8 +203,24 @@ class NotificationHandler:
             logger.error(f"Error getting sender avatar: {e}")
             return ""
 
+    async def _get_topic_title(self, telegram_client: TelegramClient, channel: Channel, topic_id: int) -> str:
+        """Fetch the title of a forum topic by its top message id."""
+        try:
+            input_peer = await telegram_client.get_input_entity(channel)
+            result = await telegram_client(  # type: ignore
+                functions.messages.GetForumTopicsByIDRequest(
+                    peer=input_peer,
+                    topics=[topic_id]
+                )
+            )
+            if result.topics:
+                return result.topics[0].title
+        except Exception as e:
+            logger.debug(f"Error fetching topic title for topic {topic_id}: {e}")
+        return ""
+
     @staticmethod
-    def _get_deep_link(sender: User | Chat | Channel, chat_id: int, message_id: int) -> str:
+    def _get_deep_link(sender: User | Chat | Channel, chat_id: int, message_id: int, topic_id: int | None = None) -> str:
         if isinstance(sender, User):
             # Direct message: tg://resolve?domain=<username>
             username = sender.username
@@ -210,7 +233,10 @@ class NotificationHandler:
             username = getattr(sender, 'username', None)
             if username:
                 # Public group/channel with username
-                return f"tg://resolve?domain={username}&post={message_id}"
+                link = f"tg://resolve?domain={username}&post={message_id}"
+                if topic_id is not None:
+                    link += f"&thread={topic_id}"
+                return link
             else:
                 # Private group/channel without username - use channel_id format
                 # Note: For groups, use the actual chat_id; for supergroups/channels, need to convert
@@ -223,7 +249,10 @@ class NotificationHandler:
                         channel_id_str = str(abs(chat_id))
                         if channel_id_str.startswith('100'):
                             channel_id = int(channel_id_str[3:])
-                    return f"tg://privatepost?channel={channel_id}&post={message_id}"
+                    link = f"tg://privatepost?channel={channel_id}&post={message_id}"
+                    if topic_id is not None:
+                        link += f"&thread={topic_id}"
+                    return link
                 else:
                     # Regular group chat
                     return f"tg://openmessage?chat_id={abs(chat_id)}"

@@ -185,7 +185,7 @@ class ImageCacheTmpfiles(ImageCache):
                         if url:
                             cached_url = self._convert_tmpfiles_url(url)
                             self._save_to_cache_db(entity_id, entity_type, cached_url)
-                            logger.info(f"Image uploaded successfully for {entity_type}:{entity_id}: {cached_url}")
+                            logger.debug(f"Image uploaded successfully for {entity_type}:{entity_id}: {cached_url}")
                             return cached_url
                         else:
                             logger.warning(f"tmpfiles.org returned no URL in response: {response_data}")

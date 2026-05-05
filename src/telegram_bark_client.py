@@ -6,37 +6,54 @@ import sys
 from telethon import TelegramClient, events
 from telethon import functions, types
 from telethon.sessions import StringSession
-from telethon.tl.types import Message, User
+from telethon.tl.types import Message, User, MessageReplyHeader
 from telethon.tl.types import UserStatusOnline, UserStatusOffline, UpdateUserStatus, UpdateNotifySettings
 from telethon.tl.types import UpdateFolderPeers
 
 from config import Config
 from notification_handler import NotificationHandler
 from activity_tracker import ActivityTracker
-from message_filter import MessageFilter, get_sender_type
+from message_filter import MessageFilter
+from util import get_sender_name
 from image_cache import ImageCache, ImageCacheTmpfiles, ImageCacheImgBB
 
 
-def setup_logging(config: Config) -> None:
-    """Configure logging based on config settings"""
-    log_level = getattr(logging, config.logging.level.upper(), logging.INFO)
+_APP_LOGGERS = [
+    "activity_tracker",
+    "config",
+    "image_cache",
+    "message_filter",
+    "notification_handler",
+    "telegram_bark_client",
+]
 
+def setup_logging(config: Config) -> None:
+    """Configure logging based on config settings.
+
+    The root logger is kept at WARNING so third-party libraries stay quiet.
+    Only the application's own modules are set to the configured level.
+    """
+    log_level = getattr(logging, config.logging.level.upper(), logging.INFO)
     log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    formatter = logging.Formatter(log_format)
+
+    # Root logger level silences third-party loggers that have no explicit level set.
+    # Handlers use NOTSET so they don't add a second filter on propagated app records.
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.WARNING)
+    for handler in root_logger.handlers:
+        handler.setLevel(logging.NOTSET)
+        handler.setFormatter(formatter)
 
     if config.logging.file:
-        logging.basicConfig(
-            level=log_level,
-            format=log_format,
-            handlers=[
-                logging.FileHandler(config.logging.file),
-                logging.StreamHandler(),
-            ]
-        )
-    else:
-        logging.basicConfig(
-            level=log_level,
-            format=log_format,
-        )
+        file_handler = logging.FileHandler(config.logging.file)
+        file_handler.setLevel(logging.NOTSET)
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+
+    # Apply the configured level only to this app's modules
+    for name in _APP_LOGGERS:
+        logging.getLogger(name).setLevel(log_level)
 
 
 logger = logging.getLogger(__name__)
@@ -136,7 +153,7 @@ class TelegramBarkClient:
     async def on_message_read(self, event) -> None:
         try:
             self.activity_tracker.record_activity()
-            logger.info(f"User read messages in chat {event.chat_id}")
+            logger.debug(f"User read messages in chat {event.chat_id}")
         except Exception as e:
             logger.error(f"Error handling message read event: {e}")
 
@@ -157,8 +174,13 @@ class TelegramBarkClient:
                 )
                 return
 
+            # Extract forum topic id if this message is inside a topic thread
+            topic_id: int | None = None
+            if isinstance(message.reply_to, MessageReplyHeader) and message.reply_to.forum_topic:
+                topic_id = message.reply_to.reply_to_top_id or 1
+
             sender = await event.get_sender()
-            if not await self.message_filter.should_forward_message(message):
+            if not await self.message_filter.should_forward_message(message, topic_id=topic_id):
                 return
 
             message_text = message.text or "[Media]"
@@ -170,6 +192,7 @@ class TelegramBarkClient:
                     message_text,
                     message.chat_id,
                     message.id,
+                    topic_id=topic_id,
                 )
 
         except Exception as e:
@@ -177,8 +200,7 @@ class TelegramBarkClient:
 
     async def on_update_notify_settings(self, update: UpdateNotifySettings) -> None:
         try:
-            if isinstance(update.peer, (types.NotifyUsers, types.NotifyChats, types.NotifyBroadcasts)):
-                await self.message_filter.update_notify_settings()
+            await self.message_filter.update_notify_settings()
         except Exception as e:
             logger.error(f"Error handling notification settings update: {e}")
 
